@@ -30,14 +30,14 @@ pub static PRECEDENCE_EOE: u8 = 9;
 ///
 ///
 pub struct ParseContext {
-    // the greedy lexicographic tokenizer which holds the text to be parsed
-    pub lexx: Box<dyn Lexxer>,
-    // the prefix parslets
-    pub prefix: Vec<PrefixParslet>,
-    // the infix parslets
-    pub infix: Vec<InfixParslet>,
-    // a reference for the script, such as it's file name or some other sourcing information
-    pub script_name: String,
+  // the greedy lexicographic tokenizer which holds the text to be parsed
+  pub lexx: Box<dyn Lexxer>,
+  // the prefix parslets
+  pub prefix: Vec<PrefixParslet>,
+  // the infix parslets
+  pub infix: Vec<InfixParslet>,
+  // a reference for the script, such as it's file name or some other sourcing information
+  pub script_name: String,
 }
 
 #[macro_export]
@@ -99,58 +99,58 @@ macro_rules! eat_whitespace {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseError {
-    TokenNotFound(String),
-    NoParserFound(Token),
-    Error(String),
+  TokenNotFound(String),
+  NoParserFound(Token),
+  Error(String),
 }
 
 impl From<LexxError> for ParseError {
-    fn from(le: LexxError) -> ParseError {
-        match le {
-            LexxError::TokenNotFound(f) => ParseError::TokenNotFound(f),
-            LexxError::Error(e) => ParseError::Error(e),
-        }
+  fn from(le: LexxError) -> ParseError {
+    match le {
+      LexxError::TokenNotFound(f) => ParseError::TokenNotFound(f),
+      LexxError::Error(e) => ParseError::Error(e),
     }
+  }
 }
 
 impl From<RollingCharBufferError> for ParseError {
-    fn from(le: RollingCharBufferError) -> ParseError {
-        match le {
-            RollingCharBufferError::BufferFullError => {
-                ParseError::Error(String::from("the lexx buffer is full"))
-            }
-            RollingCharBufferError::BufferEmptyError => {
-                ParseError::Error(String::from("the lexx buffer is empty"))
-            }
-        }
+  fn from(le: RollingCharBufferError) -> ParseError {
+    match le {
+      RollingCharBufferError::BufferFullError => {
+        ParseError::Error(String::from("the lexx buffer is full"))
+      }
+      RollingCharBufferError::BufferEmptyError => {
+        ParseError::Error(String::from("the lexx buffer is empty"))
+      }
     }
+  }
 }
 
 impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            ParseError::NoParserFound(ref t) => {
-                write!(f, "a parser could not be found for: {:?}", t.value)
-            }
-            ParseError::TokenNotFound(ref s) => {
-                write!(f, "a parser could not be found for: {:?}", s)
-            }
-            ParseError::Error(ref e) => {
-                write!(f, "an error occurred: {:?}", e)
-            }
-        }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match *self {
+      ParseError::NoParserFound(ref t) => {
+        write!(f, "a parser could not be found for: {:?}", t.value)
+      }
+      ParseError::TokenNotFound(ref s) => {
+        write!(f, "a parser could not be found for: {:?}", s)
+      }
+      ParseError::Error(ref e) => {
+        write!(f, "an error occurred: {:?}", e)
+      }
     }
+  }
 }
 
 impl Error for ParseError {
-    #[allow(deprecated)]
-    fn description(&self) -> &str {
-        match *self {
-            ParseError::NoParserFound(..) => "a parser could not be found",
-            ParseError::TokenNotFound(..) => "no token could be found",
-            ParseError::Error(..) => "an error occurred",
-        }
+  #[allow(deprecated)]
+  fn description(&self) -> &str {
+    match *self {
+      ParseError::NoParserFound(..) => "a parser could not be found",
+      ParseError::TokenNotFound(..) => "no token could be found",
+      ParseError::Error(..) => "an error occurred",
     }
+  }
 }
 
 
@@ -332,74 +332,74 @@ impl Error for ParseError {
 pub struct Parser {}
 
 impl Parser {
-    fn next_token(ctx: &mut ParseContext) -> Result<Option<Token>, LexxError> {
-        let mut token: Option<Token>;
+  fn next_token(ctx: &mut ParseContext) -> Result<Option<Token>, LexxError> {
+    let mut token: Option<Token>;
 
-        token = ctx.lexx.next_token()?;
+    token = ctx.lexx.next_token()?;
 
-        if token.is_some() && token.as_ref().unwrap().token_type == TOKEN_TYPE_WHITESPACE {
-            token = ctx.lexx.next_token()?;
-        }
-
-        if token.is_none() {
-            return Ok(None);
-        }
-        Ok(token)
+    if token.is_some() && token.as_ref().unwrap().token_type == TOKEN_TYPE_WHITESPACE {
+      token = ctx.lexx.next_token()?;
     }
-    pub fn parse(
-        ctx: &mut ParseContext,
-        left: &Option<Rc<RefCell<dyn Compiler>>>,
-        precedence: u8,
-    ) -> Result<Option<Rc<RefCell<dyn Compiler>>>, ParseError> {
-        let uctx = ctx as *mut ParseContext;
 
-        let token = match Parser::next_token(ctx)? {
-            Some(t) => t,
-            None => return Ok(None),
-        };
-
-        let mut left_compiler: Option<Rc<RefCell<dyn Compiler>>> = None;
-
-        // unsafe pointer use because of recursion
-        // this could probably be done with RefCell but there's no need for the overhead
-        // of runtime borrow checking
-        unsafe {
-            for p in &(*uctx).prefix {
-                left_compiler = p.parse(ctx, &token, left, precedence)?;
-                if left_compiler.is_some() {
-                    break;
-                }
-            }
-        }
-
-        if left_compiler.is_none() {
-            ctx.lexx.rewind(token.clone())?;
-            return Err(ParseError::NoParserFound(token));
-        }
-
-        loop {
-            let mut infix_compiler: Option<Rc<RefCell<dyn Compiler>>> = None;
-            let token = match Parser::next_token(ctx)? {
-                Some(t) => t,
-                None => return Ok(left_compiler),
-            };
-
-            unsafe {
-                for p in &(*uctx).infix {
-                    infix_compiler = p.parse(ctx, &token, &left_compiler, precedence)?;
-                    if infix_compiler.is_some() {
-                        break;
-                    }
-                }
-            }
-
-            if infix_compiler.as_ref().is_none() {
-                ctx.lexx.rewind(token)?;
-                break;
-            }
-            left_compiler = infix_compiler;
-        }
-
-        return Ok(left_compiler);
+    if token.is_none() {
+      return Ok(None);
     }
+    Ok(token)
+  }
+  pub fn parse(
+    ctx: &mut ParseContext,
+    left: &Option<Rc<RefCell<dyn Compiler>>>,
+    precedence: u8,
+  ) -> Result<Option<Rc<RefCell<dyn Compiler>>>, ParseError> {
+    let uctx = ctx as *mut ParseContext;
+
+    let token = match Parser::next_token(ctx)? {
+      Some(t) => t,
+      None => return Ok(None),
+    };
+
+    let mut left_compiler: Option<Rc<RefCell<dyn Compiler>>> = None;
+
+    // unsafe pointer use because of recursion
+    // this could probably be done with RefCell but there's no need for the overhead
+    // of runtime borrow checking
+    unsafe {
+      for p in &(*uctx).prefix {
+        left_compiler = p.parse(ctx, &token, left, precedence)?;
+        if left_compiler.is_some() {
+          break;
+        }
+      }
+    }
+
+    if left_compiler.is_none() {
+      ctx.lexx.rewind(token.clone())?;
+      return Err(ParseError::NoParserFound(token));
+    }
+
+    loop {
+      let mut infix_compiler: Option<Rc<RefCell<dyn Compiler>>> = None;
+      let token = match Parser::next_token(ctx)? {
+        Some(t) => t,
+        None => return Ok(left_compiler),
+      };
+
+      unsafe {
+        for p in &(*uctx).infix {
+          infix_compiler = p.parse(ctx, &token, &left_compiler, precedence)?;
+          if infix_compiler.is_some() {
+            break;
+          }
+        }
+      }
+
+      if infix_compiler.as_ref().is_none() {
+        ctx.lexx.rewind(token)?;
+        break;
+      }
+      left_compiler = infix_compiler;
+    }
+
+    return Ok(left_compiler);
+  }
 }
